@@ -30,7 +30,7 @@ jobs:
           sed -i '/server/d' angular.json
           sed -i '/ssr/d' angular.json
           rm -rf src/main.server.ts src/server.ts tsconfig.server.json 2>/dev/null || true
-          ng build
+          npm run build
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
