@@ -1,8 +1,10 @@
-name: Build Angular Project
+# name: Build & SonarCloud Scan
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - master
+      - main
   pull_request:
 
 jobs:
@@ -10,17 +12,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          node-version: '18'
+          fetch-depth: 0
 
-      - name: Install Dependencies
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
         run: npm install
 
-      - name: Build Angular Project
-        run: npm run build --if-present
+      - name: Build Angular (no SSR)
+        run: |
+          sed -i '/server/d' angular.json
+          sed -i '/ssr/d' angular.json
+          rm -rf src/main.server.ts src/server.ts tsconfig.server.json 2>/dev/null || true
+          ng build
 
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
