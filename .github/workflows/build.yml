@@ -26,11 +26,6 @@ jobs:
      
       - name: SonarCloud Scan 
         uses: SonarSource/sonarcloud-github-action@v2 
-        with: 
-         args:
-          -Dsonar.projectKey=your_project_key 
-          -Dsonar.organization=your_organization 
-          -Dsonar.sources=src
         env: 
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }} 
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
