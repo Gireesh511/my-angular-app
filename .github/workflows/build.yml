@@ -30,7 +30,7 @@ jobs:
          args:
           -Dsonar.projectKey=your_project_key 
           -Dsonar.organization=your_organization 
-          -Dsonar.sources=src"
+          -Dsonar.sources=src
         env: 
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }} 
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
