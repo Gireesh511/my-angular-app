@@ -40,7 +40,7 @@ jobs:
         run: |
           curl -u "${{ secrets.SONAR_TOKEN }}:" \
             "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}" \
-            -o sonar-issues.json
+            -o ai-agent/sonar-issues.json
 
       # ------------------------
       # CONFIGURE GIT (BEFORE AI FIX)
