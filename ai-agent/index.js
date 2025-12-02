@@ -31,6 +31,12 @@ async function fetchFileFromGitHub(filePath) {
   }
 }
 
+
+console.log("🚀 AI Agent started...");
+console.log("OPENAI KEY AVAILABLE:", !!process.env.OPENAI_API_KEY);
+console.log("GITHUB TOKEN AVAILABLE:", !!process.env.GITHUB_TOKEN);
+console.log("Reading sonar-issues.json...");
+
 /**
  * Call OpenAI to fix issues
  */
@@ -98,6 +104,7 @@ async function main() {
     console.log("🎉 No issues found.");
     return;
   }
+console.log("Total Sonar Issues Found:", sonarData.issues.length);
 
   for (const issue of sonarData.issues) {
     const filePath = issue.component.split(":").pop(); // Sonar paths like "src/app/file.ts"
@@ -106,6 +113,7 @@ async function main() {
     console.log("\n=============================");
     console.log("Processing:", filePath);
     console.log("Sonar Issue:", issueMsg);
+console.log("Fixing file:", filePath);
 
     const originalCode = await fetchFileFromGitHub(filePath);
     if (!originalCode) continue;
