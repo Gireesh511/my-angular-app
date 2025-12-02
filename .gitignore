@@ -1,42 +1,84 @@
-# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+name: Build Angular Project
 
-# Compiled output
-/dist
-/tmp
-/out-tsc
-/bazel-out
+on:
+  push:
+    branches:
+      - main
+  pull_request:
 
-# Node
-/node_modules
-npm-debug.log
-yarn-error.log
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-# IDEs and editors
-.idea/
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-# Visual Studio Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-.history/*
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
 
-# Miscellaneous
-/.angular/cache
-.sass-cache/
-/connect.lock
-/coverage
-/libpeerconnection.log
-testem.log
-/typings
+      # -----------------------------
+      # SONAR SCAN
+      # -----------------------------
 
-# System files
-.DS_Store
-Thumbs.db
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Angular project
+        run: npm run build --if-present
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # -----------------------------
+      # DOWNLOAD SONAR ISSUES JSON
+      # -----------------------------
+      - name: Download Sonar Issues JSON
+        run: |
+          echo "Downloading issues..."
+          mkdir -p ai-agent
+          curl -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}" \
+            -o ai-agent/sonar-issues.json
+
+      # -----------------------------
+      # RUN AI AGENT
+      # -----------------------------
+      - name: Run AI Agent
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Running AI Agent..."
+          node ai-agent/index.js
+
+      # -----------------------------
+      # COMMIT + PUSH CHANGES
+      # -----------------------------
+      - name: Commit and Push Changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "AI Agent - Fixes based on Sonar Issues"
+          git push origin main
+node_modules
