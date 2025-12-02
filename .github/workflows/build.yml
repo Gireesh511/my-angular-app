@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   pull_request:
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,6 +16,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -23,12 +29,66 @@ jobs:
 
       - name: Build Angular Project
         run: npm run build --if-present
-     
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
         env:
-           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-       
-       
+      - name: Download Sonar Issues JSON
+        run: |
+          curl -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}" \
+            -o sonar-issues.json
+
+      # ------------------------
+      # CONFIGURE GIT (BEFORE AI FIX)
+      # ------------------------
+      - name: Configure Git User
+        run: |
+          git config --global user.name "sonar-ai-bot"
+          git config --global user.email "bot@example.com"
+
+      # ------------------------
+      # INSTALL AI AGENT
+      # ------------------------
+      - name: Install AI Agent Dependencies
+        run: |
+          cd ai-agent
+          npm install
+
+      # ------------------------
+      # RUN AI FIX AGENT
+      # ------------------------
+      - name: Run AI Auto-Fix Agent
+        run: |
+          cd ai-agent
+          node index.js
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_BRANCH: "main"
+
+      # ------------------------
+      # CHECK IF ANY FILES CHANGED
+      # ------------------------
+      - name: Detect changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "changed=no" >> $GITHUB_OUTPUT
+          else
+            echo "changed=yes" >> $GITHUB_OUTPUT
+          fi
+
+      # ------------------------
+      # COMMIT & PUSH FIXES
+      # ------------------------
+      - name: Commit and Push Code Fixes
+        if: steps.changes.outputs.changed == 'yes'
+        run: |
+          git add .
+          git commit -m "AI Auto-Fix: SonarCloud Issues Resolved"
+          git push origin main
