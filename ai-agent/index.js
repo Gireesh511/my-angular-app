@@ -2,6 +2,12 @@ import fs from "fs";
 import axios from "axios";
 import { Octokit } from "@octokit/rest";
 import OpenAI from "openai";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// ESM dirname replacement
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ENV variables (GitHub Actions)
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -35,7 +41,11 @@ async function fetchFileFromGitHub(filePath) {
 console.log("🚀 AI Agent started...");
 console.log("OPENAI KEY AVAILABLE:", !!process.env.OPENAI_API_KEY);
 console.log("GITHUB TOKEN AVAILABLE:", !!process.env.GITHUB_TOKEN);
-console.log("Reading sonar-issues.json...");
+
+// Correct sonar-issues.json path inside ai-agent folder
+const sonarIssuesPath = path.join(__dirname, "sonar-issues.json");
+console.log("Reading sonar issues from:", sonarIssuesPath);
+
 
 /**
  * Call OpenAI to fix issues
@@ -86,45 +96,44 @@ Rules:
  * Save updated file
  */
 async function saveFixedFile(filePath, updatedContent) {
-  const localPath = "../" + filePath; // Stores inside project folder
+  const projectRootPath = path.join(__dirname, "..", filePath);
 
-  fs.mkdirSync(require("path").dirname(localPath), { recursive: true });
-  fs.writeFileSync(localPath, updatedContent, "utf8");
+  fs.mkdirSync(path.dirname(projectRootPath), { recursive: true });
+  fs.writeFileSync(projectRootPath, updatedContent, "utf8");
 
-  console.log("✔ Updated:", localPath);
+  console.log("✔ Updated:", projectRootPath);
 }
 
 /**
  * Main runner
  */
 async function main() {
-  const sonarData = JSON.parse(fs.readFileSync("sonar-issues.json", "utf8"));
+  // Read sonar-issues.json from correct path
+  const sonarData = JSON.parse(fs.readFileSync(sonarIssuesPath, "utf8"));
 
   if (!sonarData.issues || sonarData.issues.length === 0) {
     console.log("🎉 No issues found.");
     return;
   }
-console.log("Total Sonar Issues Found:", sonarData.issues.length);
+
+  console.log("Total Sonar Issues Found:", sonarData.issues.length);
 
   for (const issue of sonarData.issues) {
-    const filePath = issue.component.split(":").pop(); // Sonar paths like "src/app/file.ts"
+    const filePath = issue.component.split(":").pop(); // Sonar paths
     const issueMsg = issue.message;
 
     console.log("\n=============================");
     console.log("Processing:", filePath);
     console.log("Sonar Issue:", issueMsg);
-console.log("Fixing file:", filePath);
 
     const originalCode = await fetchFileFromGitHub(filePath);
     if (!originalCode) continue;
 
     let fixedCode = await callOpenAI(filePath, issueMsg, originalCode);
-
-    fixedCode = fixedCode.replace(/```+/g, "").trim(); // Remove markdown blocks
+    fixedCode = fixedCode.replace(/```+/g, "").trim(); // Remove markdown
 
     await saveFixedFile(filePath, fixedCode);
   }
 }
 
 main().catch((err) => console.error(err));
-
