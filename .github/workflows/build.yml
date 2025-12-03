@@ -45,7 +45,7 @@ jobs:
       - name: Print sonar-issues.json (debug)
         run: |
           echo "----- sonar-issues.json -----"
-          cat sonar-issues.json
+          cat ai-agent/sonar-issues.json
           echo "-----------------------------"
       # ------------------------
       # CONFIGURE GIT (BEFORE AI FIX)
