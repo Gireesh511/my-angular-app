@@ -42,6 +42,11 @@ jobs:
             "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}" \
             -o ai-agent/sonar-issues.json
 
+      - name: Print sonar-issues.json (debug)
+        run: |
+          echo "----- sonar-issues.json -----"
+          cat sonar-issues.json
+          echo "-----------------------------"
       # ------------------------
       # CONFIGURE GIT (BEFORE AI FIX)
       # ------------------------
