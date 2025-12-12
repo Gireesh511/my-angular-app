@@ -44,7 +44,7 @@ jobs:
           ls -la
 
           curl -v -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&types=CODE_SMELL&languages=ts,js,html,css&ps=500&p=1" \
             -o ai-agent/sonar-issues.json
 
           echo "Listing files after download:"
