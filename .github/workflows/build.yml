@@ -1,4 +1,4 @@
-name: Build Angular Project
+name: Build Angular Project with AI Sonar Fix
 
 on:
   push:
@@ -14,22 +14,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ------------------------
+      # CHECKOUT
+      # ------------------------
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
+      # ------------------------
+      # NODE SETUP
+      # ------------------------
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
+      # ------------------------
+      # INSTALL ROOT DEPENDENCIES
+      # ------------------------
       - name: Install Dependencies
         run: npm install
 
+      # ------------------------
+      # BUILD ANGULAR
+      # ------------------------
       - name: Build Angular Project
         run: npm run build --if-present
 
+      # ------------------------
+      # SONARCLOUD SCAN
+      # ------------------------
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
         env:
@@ -37,21 +52,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ------------------------
-      # DOWNLOAD SONAR ISSUES
+      # DOWNLOAD SONAR ISSUES (FIXED)
       # ------------------------
       - name: Download Sonar Issues JSON
         run: |
-          echo "📥 Downloading sonar issues..."
+          echo "📥 Downloading Sonar issues..."
           mkdir -p ai-agent
 
-          curl -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&types=CODE_SMELL&languages=ts,js,html,css&ps=500&p=1" \
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/issues/search?organization=${{ secrets.SONAR_ORG }}&projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&types=CODE_SMELL&languages=ts,js,html,css&ps=500" \
             -o ai-agent/sonar-issues.json
 
-          echo "✅ Files inside ai-agent:"
-          ls -la ai-agent
-
-          echo "----- sonar-issues.json -----"
+          echo "📄 sonar-issues.json content:"
           cat ai-agent/sonar-issues.json
 
       # ------------------------
@@ -60,7 +72,7 @@ jobs:
       - name: Configure Git User
         run: |
           git config --global user.name "sonar-ai-bot"
-          git config --global user.email "bot@example.com"
+          git config --global user.email "sonar-ai-bot@users.noreply.github.com"
 
       # ------------------------
       # INSTALL AI AGENT
@@ -71,7 +83,7 @@ jobs:
           npm install
 
       # ------------------------
-      # RUN AI FIX AGENT
+      # RUN AI AUTO-FIX AGENT
       # ------------------------
       - name: Run AI Auto-Fix Agent
         run: |
@@ -81,7 +93,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
-          GITHUB_BRANCH: "main"
+          GITHUB_BRANCH: main
 
       # ------------------------
       # CHECK FOR CHANGES
@@ -102,5 +114,5 @@ jobs:
         if: steps.changes.outputs.changed == 'yes'
         run: |
           git add .
-          git commit -m "AI Auto-Fix: SonarCloud Issues Resolved"
+          git commit -m "AI Auto-Fix: SonarCloud issues resolved"
           git push origin main
