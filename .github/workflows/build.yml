@@ -1,4 +1,4 @@
-name: Build Angular Project with AI Sonar Fix
+name: Build Angular Project
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
 
     steps:
       # ------------------------
-      # CHECKOUT
+      # CHECKOUT CODE
       # ------------------------
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -31,7 +31,7 @@ jobs:
           node-version: '18'
 
       # ------------------------
-      # INSTALL ROOT DEPENDENCIES
+      # INSTALL PROJECT DEPENDENCIES
       # ------------------------
       - name: Install Dependencies
         run: npm install
@@ -52,15 +52,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ------------------------
-      # DOWNLOAD SONAR ISSUES (FIXED)
+      # WAIT FOR SONAR INDEXING (IMPORTANT)
+      # ------------------------
+      - name: Wait for SonarCloud indexing
+        run: sleep 20
+
+      # ------------------------
+      # DOWNLOAD SONAR ISSUES
       # ------------------------
       - name: Download Sonar Issues JSON
         run: |
           echo "📥 Downloading Sonar issues..."
           mkdir -p ai-agent
 
-          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/issues/search?organization=${{ secrets.SONAR_ORG }}&projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&types=CODE_SMELL&languages=ts,js,html,css&ps=500" \
+          curl -s -f -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/issues/search?organization=${{ secrets.SONAR_ORG }}&projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false&types=BUG,CODE_SMELL,VULNERABILITY&ps=500" \
             -o ai-agent/sonar-issues.json
 
           echo "📄 sonar-issues.json content:"
@@ -93,10 +99,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
-          GITHUB_BRANCH: main
+          GITHUB_BRANCH: "main"
 
       # ------------------------
-      # CHECK FOR CHANGES
+      # CHECK FOR FILE CHANGES
       # ------------------------
       - name: Detect changes
         id: changes
@@ -114,5 +120,5 @@ jobs:
         if: steps.changes.outputs.changed == 'yes'
         run: |
           git add .
-          git commit -m "AI Auto-Fix: SonarCloud issues resolved"
+          git commit -m "AI Auto-Fix: SonarCloud Issues Resolved"
           git push origin main
