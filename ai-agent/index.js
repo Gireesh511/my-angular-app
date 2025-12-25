@@ -14,6 +14,7 @@ const __dirname = path.dirname(__filename);
    ENV variables
 ---------------------------------- */
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // ✅ CHANGED
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = process.env.GITHUB_REPO;     // owner/repo
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "main";
@@ -25,13 +26,14 @@ const octokit = new Octokit({ auth: GITHUB_TOKEN });
 ---------------------------------- */
 const MAX_FIXES = 3;          // Fix only N valid issues per run
 const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 5000;
+const BASE_DELAY_MS = 4000;
 
 /* ---------------------------------
    Logs
 ---------------------------------- */
 console.log("🚀 AI Agent started...");
 console.log("OPENAI KEY AVAILABLE:", !!OPENAI_API_KEY);
+console.log("OPENAI MODEL:", OPENAI_MODEL);
 console.log("GITHUB TOKEN AVAILABLE:", !!GITHUB_TOKEN);
 
 /* ---------------------------------
@@ -53,7 +55,7 @@ async function fetchFileFromGitHub(filePath) {
     });
 
     return Buffer.from(data.content, "base64").toString("utf8");
-  } catch (err) {
+  } catch {
     console.log("❌ Failed to fetch file:", filePath);
     return null;
   }
@@ -68,7 +70,7 @@ async function callOpenAI(prompt) {
       const response = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
-          model: "gpt-4.1",
+          model: OPENAI_MODEL,
           messages: [
             { role: "system", content: "You are a code-fixing AI agent." },
             { role: "user", content: prompt }
@@ -86,7 +88,7 @@ async function callOpenAI(prompt) {
       return response.data.choices[0].message.content;
     } catch (err) {
       if (err.response?.status === 429) {
-        console.warn(`⚠️ Rate limited. Retrying in ${attempt * 5}s...`);
+        console.warn(`⚠️ Rate limited. Retrying in ${attempt * 4}s...`);
         await new Promise(r => setTimeout(r, BASE_DELAY_MS * attempt));
       } else {
         console.error("❌ OpenAI error:", err.message);
@@ -130,44 +132,40 @@ async function main() {
     if (fixedCount >= MAX_FIXES) break;
 
     const filePath = issue.component.split(":").pop();
-    const issueMsg = issue.message;
+    const issueMsg = issue.message.toLowerCase();
 
     /* -------------------------------
-       SAFETY FILTERS (CRITICAL)
+       SAFETY FILTERS
     -------------------------------- */
 
-    // Never modify AI agent itself
     if (filePath.startsWith("ai-agent/")) {
       console.log("⛔ Skipping AI agent file:", filePath);
       continue;
     }
 
-    // Skip test files
     if (filePath.endsWith(".spec.ts")) {
       console.log("⚠️ Skipping test file:", filePath);
       continue;
     }
 
-    // Skip HTML / CSS
     if (filePath.endsWith(".html") || filePath.endsWith(".css")) {
       console.log("⚠️ Skipping non-code file:", filePath);
       continue;
     }
 
-    // Skip cosmetic / low-value rules
     if (
-      issueMsg.toLowerCase().includes("replaceall") ||
-      issueMsg.toLowerCase().includes("accessibility") ||
-      issueMsg.toLowerCase().includes("empty source") ||
-      issueMsg.toLowerCase().includes("separator role")
+      issueMsg.includes("replaceall") ||
+      issueMsg.includes("accessibility") ||
+      issueMsg.includes("empty source") ||
+      issueMsg.includes("separator role")
     ) {
-      console.log("⚠️ Skipping cosmetic issue:", issueMsg);
+      console.log("⚠️ Skipping cosmetic issue:", issue.message);
       continue;
     }
 
     console.log("\n=============================");
     console.log("Processing:", filePath);
-    console.log("Issue:", issueMsg);
+    console.log("Issue:", issue.message);
 
     const originalCode = await fetchFileFromGitHub(filePath);
     if (!originalCode) continue;
@@ -176,7 +174,7 @@ async function main() {
 Fix ONLY the SonarCloud issue below.
 
 --- ISSUE ---
-${issueMsg}
+${issue.message}
 
 --- FILE PATH ---
 ${filePath}
@@ -195,6 +193,9 @@ Rules:
 
     saveFixedFile(filePath, fixedCode.replace(/```+/g, "").trim());
     fixedCount++;
+
+    // Small delay to avoid burst limits
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   console.log(`✅ Fixed ${fixedCount} issue(s)`);
