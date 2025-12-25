@@ -18,7 +18,7 @@ jobs:
     # CHECKOUT
     # ------------------------
     - name: Checkout Code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
@@ -26,9 +26,9 @@ jobs:
     # NODE SETUP
     # ------------------------
     - name: Set up Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: 18
 
     # ------------------------
     # INSTALL & BUILD
@@ -46,15 +46,20 @@ jobs:
       uses: SonarSource/sonarcloud-github-action@v2
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        args: >
+          -Dsonar.organization=Gireesh511
+          -Dsonar.projectKey=Gireesh511_my-angular-app
+          -Dsonar.sources=.
+          -Dsonar.host.url=https://sonarcloud.io
 
     # ------------------------
     # WAIT FOR INDEXING
     # ------------------------
     - name: Wait for SonarCloud indexing
       run: |
-        echo "⏳ Waiting for SonarCloud to finish indexing..."
-        sleep 25
+        echo "⏳ Waiting for SonarCloud indexing..."
+        sleep 30
 
     # ------------------------
     # DOWNLOAD SONAR ISSUES
@@ -65,24 +70,26 @@ jobs:
         mkdir -p ai-agent
 
         API_URL="https://sonarcloud.io/api/issues/search"
-        QUERY="organization=${{ secrets.SONAR_ORG }}&projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false&types=BUG,CODE_SMELL,VULNERABILITY&ps=500"
+        QUERY="organization=Gireesh511&projectKeys=Gireesh511_my-angular-app&resolved=false&types=BUG,VULNERABILITY,CODE_SMELL&ps=500"
 
         echo "Calling:"
         echo "$API_URL?$QUERY"
 
-        HTTP_CODE=$(curl -s \
+        HTTP_CODE=$(curl -sS \
           -u "${{ secrets.SONAR_TOKEN }}:" \
           -w "%{http_code}" \
           "$API_URL?$QUERY" \
-          -o ai-agent/sonar-issues.json)
+          -o ai-agent/sonar-issues.json || true)
 
         echo "HTTP STATUS: $HTTP_CODE"
-        echo "----- sonar-issues.json -----"
-        cat ai-agent/sonar-issues.json
 
-        if [ "$HTTP_CODE" -ne 200 ]; then
-          echo "❌ SonarCloud API failed"
-          exit 1
+        echo "----- sonar-issues.json -----"
+        cat ai-agent/sonar-issues.json || echo "{}"
+
+        # Do NOT hard fail on SonarCloud instability
+        if grep -q '"errors"' ai-agent/sonar-issues.json; then
+          echo "⚠️ SonarCloud API returned errors, continuing pipeline"
+          echo '{}' > ai-agent/sonar-issues.json
         fi
 
     # ------------------------
@@ -112,7 +119,7 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_REPO: ${{ github.repository }}
-        GITHUB_BRANCH: "main"
+        GITHUB_BRANCH: main
 
     # ------------------------
     # CHECK CHANGES
