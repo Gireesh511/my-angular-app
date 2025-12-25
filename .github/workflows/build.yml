@@ -36,31 +36,26 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ------------------------
+      # DOWNLOAD SONAR ISSUES
+      # ------------------------
       - name: Download Sonar Issues JSON
         run: |
           echo "📥 Downloading sonar issues..."
-          echo "Working directory: $(pwd)"
-          echo "Listing files before download:"
-          ls -la
+          mkdir -p ai-agent
 
-          curl -v -u "${{ secrets.SONAR_TOKEN }}:" \
+          curl -u "${{ secrets.SONAR_TOKEN }}:" \
             "https://sonarcloud.io/api/issues/search?projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&types=CODE_SMELL&languages=ts,js,html,css&ps=500&p=1" \
             -o ai-agent/sonar-issues.json
 
-          echo "Listing files after download:"
-          ls -la
+          echo "✅ Files inside ai-agent:"
+          ls -la ai-agent
 
-          echo "----- sonar-issues.json (if exists) -----"
-          if [ -f sonar-issues.json ]; then
-            cat sonar-issues.json
-          else
-            echo "❌ sonar-issues.json NOT FOUND"
-          fi
+          echo "----- sonar-issues.json -----"
+          cat ai-agent/sonar-issues.json
 
-
-    
       # ------------------------
-      # CONFIGURE GIT (BEFORE AI FIX)
+      # CONFIGURE GIT
       # ------------------------
       - name: Configure Git User
         run: |
@@ -89,7 +84,7 @@ jobs:
           GITHUB_BRANCH: "main"
 
       # ------------------------
-      # CHECK IF ANY FILES CHANGED
+      # CHECK FOR CHANGES
       # ------------------------
       - name: Detect changes
         id: changes
