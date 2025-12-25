@@ -1,4 +1,4 @@
-name: Build Angular Project
+name: Build Angular Project with Sonar AI Fix
 
 on:
   push:
@@ -14,111 +14,124 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ------------------------
-      # CHECKOUT CODE
-      # ------------------------
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+    # ------------------------
+    # CHECKOUT
+    # ------------------------
+    - name: Checkout Code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
 
-      # ------------------------
-      # NODE SETUP
-      # ------------------------
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
+    # ------------------------
+    # NODE SETUP
+    # ------------------------
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
 
-      # ------------------------
-      # INSTALL PROJECT DEPENDENCIES
-      # ------------------------
-      - name: Install Dependencies
-        run: npm install
+    # ------------------------
+    # INSTALL & BUILD
+    # ------------------------
+    - name: Install Dependencies
+      run: npm install
 
-      # ------------------------
-      # BUILD ANGULAR
-      # ------------------------
-      - name: Build Angular Project
-        run: npm run build --if-present
+    - name: Build Angular Project
+      run: npm run build --if-present
 
-      # ------------------------
-      # SONARCLOUD SCAN
-      # ------------------------
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v2
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # ------------------------
+    # SONARCLOUD SCAN
+    # ------------------------
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@v2
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ------------------------
-      # WAIT FOR SONAR INDEXING (IMPORTANT)
-      # ------------------------
-      - name: Wait for SonarCloud indexing
-        run: sleep 20
+    # ------------------------
+    # WAIT FOR INDEXING
+    # ------------------------
+    - name: Wait for SonarCloud indexing
+      run: |
+        echo "⏳ Waiting for SonarCloud to finish indexing..."
+        sleep 25
 
-      # ------------------------
-      # DOWNLOAD SONAR ISSUES
-      # ------------------------
-      - name: Download Sonar Issues JSON
-        run: |
-          echo "📥 Downloading Sonar issues..."
-          mkdir -p ai-agent
+    # ------------------------
+    # DOWNLOAD SONAR ISSUES
+    # ------------------------
+    - name: Download Sonar Issues JSON
+      run: |
+        echo "📥 Downloading Sonar issues..."
+        mkdir -p ai-agent
 
-          curl -s -f -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/issues/search?organization=${{ secrets.SONAR_ORG }}&projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false&types=BUG,CODE_SMELL,VULNERABILITY&ps=500" \
-            -o ai-agent/sonar-issues.json
+        API_URL="https://sonarcloud.io/api/issues/search"
+        QUERY="organization=${{ secrets.SONAR_ORG }}&projectKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false&types=BUG,CODE_SMELL,VULNERABILITY&ps=500"
 
-          echo "📄 sonar-issues.json content:"
-          cat ai-agent/sonar-issues.json
+        echo "Calling:"
+        echo "$API_URL?$QUERY"
 
-      # ------------------------
-      # CONFIGURE GIT
-      # ------------------------
-      - name: Configure Git User
-        run: |
-          git config --global user.name "sonar-ai-bot"
-          git config --global user.email "sonar-ai-bot@users.noreply.github.com"
+        HTTP_CODE=$(curl -s \
+          -u "${{ secrets.SONAR_TOKEN }}:" \
+          -w "%{http_code}" \
+          "$API_URL?$QUERY" \
+          -o ai-agent/sonar-issues.json)
 
-      # ------------------------
-      # INSTALL AI AGENT
-      # ------------------------
-      - name: Install AI Agent Dependencies
-        run: |
-          cd ai-agent
-          npm install
+        echo "HTTP STATUS: $HTTP_CODE"
+        echo "----- sonar-issues.json -----"
+        cat ai-agent/sonar-issues.json
 
-      # ------------------------
-      # RUN AI AUTO-FIX AGENT
-      # ------------------------
-      - name: Run AI Auto-Fix Agent
-        run: |
-          cd ai-agent
-          node index.js
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
-          GITHUB_BRANCH: "main"
+        if [ "$HTTP_CODE" -ne 200 ]; then
+          echo "❌ SonarCloud API failed"
+          exit 1
+        fi
 
-      # ------------------------
-      # CHECK FOR FILE CHANGES
-      # ------------------------
-      - name: Detect changes
-        id: changes
-        run: |
-          if git diff --quiet; then
-            echo "changed=no" >> $GITHUB_OUTPUT
-          else
-            echo "changed=yes" >> $GITHUB_OUTPUT
-          fi
+    # ------------------------
+    # CONFIGURE GIT
+    # ------------------------
+    - name: Configure Git User
+      run: |
+        git config --global user.name "sonar-ai-bot"
+        git config --global user.email "sonar-ai-bot@users.noreply.github.com"
 
-      # ------------------------
-      # COMMIT & PUSH FIXES
-      # ------------------------
-      - name: Commit and Push Code Fixes
-        if: steps.changes.outputs.changed == 'yes'
-        run: |
-          git add .
-          git commit -m "AI Auto-Fix: SonarCloud Issues Resolved"
-          git push origin main
+    # ------------------------
+    # INSTALL AI AGENT
+    # ------------------------
+    - name: Install AI Agent Dependencies
+      run: |
+        cd ai-agent
+        npm install
+
+    # ------------------------
+    # RUN AI FIX AGENT
+    # ------------------------
+    - name: Run AI Auto-Fix Agent
+      run: |
+        cd ai-agent
+        node index.js
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPO: ${{ github.repository }}
+        GITHUB_BRANCH: "main"
+
+    # ------------------------
+    # CHECK CHANGES
+    # ------------------------
+    - name: Detect changes
+      id: changes
+      run: |
+        if git diff --quiet; then
+          echo "changed=no" >> $GITHUB_OUTPUT
+        else
+          echo "changed=yes" >> $GITHUB_OUTPUT
+        fi
+
+    # ------------------------
+    # COMMIT & PUSH
+    # ------------------------
+    - name: Commit and Push Code Fixes
+      if: steps.changes.outputs.changed == 'yes'
+      run: |
+        git add .
+        git commit -m "AI Auto-Fix: SonarCloud Issues"
+        git push origin main
