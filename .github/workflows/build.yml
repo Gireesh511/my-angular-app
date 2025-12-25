@@ -18,7 +18,7 @@ jobs:
     # CHECKOUT
     # ------------------------
     - name: Checkout Code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
       with:
         fetch-depth: 0
 
@@ -26,9 +26,9 @@ jobs:
     # NODE SETUP
     # ------------------------
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v3
       with:
-        node-version: 18
+        node-version: '18'
 
     # ------------------------
     # INSTALL & BUILD
@@ -40,7 +40,7 @@ jobs:
       run: npm run build --if-present
 
     # ------------------------
-    # SONARCLOUD SCAN
+    # SONARCLOUD SCAN (FIXED)
     # ------------------------
     - name: SonarCloud Scan
       uses: SonarSource/sonarcloud-github-action@v2
@@ -48,7 +48,7 @@ jobs:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       with:
         args: >
-          -Dsonar.organization=Gireesh511
+          -Dsonar.organization=gireesh511
           -Dsonar.projectKey=Gireesh511_my-angular-app
           -Dsonar.sources=.
           -Dsonar.host.url=https://sonarcloud.io
@@ -70,26 +70,21 @@ jobs:
         mkdir -p ai-agent
 
         API_URL="https://sonarcloud.io/api/issues/search"
-        QUERY="organization=Gireesh511&projectKeys=Gireesh511_my-angular-app&resolved=false&types=BUG,VULNERABILITY,CODE_SMELL&ps=500"
+        QUERY="organization=gireesh511&projectKeys=Gireesh511_my-angular-app&resolved=false&ps=500"
 
-        echo "Calling:"
-        echo "$API_URL?$QUERY"
-
-        HTTP_CODE=$(curl -sS \
+        HTTP_CODE=$(curl -s \
           -u "${{ secrets.SONAR_TOKEN }}:" \
           -w "%{http_code}" \
           "$API_URL?$QUERY" \
-          -o ai-agent/sonar-issues.json || true)
+          -o ai-agent/sonar-issues.json)
 
         echo "HTTP STATUS: $HTTP_CODE"
-
         echo "----- sonar-issues.json -----"
-        cat ai-agent/sonar-issues.json || echo "{}"
+        cat ai-agent/sonar-issues.json
 
-        # Do NOT hard fail on SonarCloud instability
-        if grep -q '"errors"' ai-agent/sonar-issues.json; then
-          echo "⚠️ SonarCloud API returned errors, continuing pipeline"
-          echo '{}' > ai-agent/sonar-issues.json
+        if [ "$HTTP_CODE" -ne 200 ]; then
+          echo "❌ SonarCloud API failed"
+          exit 1
         fi
 
     # ------------------------
