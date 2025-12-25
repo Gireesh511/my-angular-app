@@ -4,45 +4,45 @@ import { Octokit } from "@octokit/rest";
 import path from "path";
 import { fileURLToPath } from "url";
 
-/* ------------------------------
-   ESM dirname replacement
--------------------------------- */
+/* ---------------------------------
+   ESM __dirname replacement
+---------------------------------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/* ------------------------------
-   ENV variables (GitHub Actions)
--------------------------------- */
+/* ---------------------------------
+   ENV variables
+---------------------------------- */
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_REPO = process.env.GITHUB_REPO;      // username/repo
+const GITHUB_REPO = process.env.GITHUB_REPO;     // owner/repo
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "main";
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
-/* ------------------------------
+/* ---------------------------------
    Constants
--------------------------------- */
-const MAX_ISSUES = 3;                 // Prevent token explosion
-const MAX_RETRIES = 3;                // OpenAI retry attempts
-const RETRY_DELAY_MS = 5000;
+---------------------------------- */
+const MAX_FIXES = 3;          // Fix only N valid issues per run
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 5000;
 
-/* ------------------------------
-   Logging
--------------------------------- */
+/* ---------------------------------
+   Logs
+---------------------------------- */
 console.log("🚀 AI Agent started...");
 console.log("OPENAI KEY AVAILABLE:", !!OPENAI_API_KEY);
 console.log("GITHUB TOKEN AVAILABLE:", !!GITHUB_TOKEN);
 
-/* ------------------------------
-   Sonar Issues File
--------------------------------- */
+/* ---------------------------------
+   Sonar issues path
+---------------------------------- */
 const sonarIssuesPath = path.join(__dirname, "sonar-issues.json");
 console.log("Reading sonar issues from:", sonarIssuesPath);
 
-/* ------------------------------
-   Fetch file content from GitHub
--------------------------------- */
+/* ---------------------------------
+   Fetch file from GitHub
+---------------------------------- */
 async function fetchFileFromGitHub(filePath) {
   try {
     const { data } = await octokit.repos.getContent({
@@ -59,9 +59,9 @@ async function fetchFileFromGitHub(filePath) {
   }
 }
 
-/* ------------------------------
-   OpenAI call with retry handling
--------------------------------- */
+/* ---------------------------------
+   Call OpenAI with retry handling
+---------------------------------- */
 async function callOpenAI(prompt) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -73,7 +73,7 @@ async function callOpenAI(prompt) {
             { role: "system", content: "You are a code-fixing AI agent." },
             { role: "user", content: prompt }
           ],
-          temperature: 0.2
+          temperature: 0.2,
         },
         {
           headers: {
@@ -87,7 +87,7 @@ async function callOpenAI(prompt) {
     } catch (err) {
       if (err.response?.status === 429) {
         console.warn(`⚠️ Rate limited. Retrying in ${attempt * 5}s...`);
-        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * attempt));
+        await new Promise(r => setTimeout(r, BASE_DELAY_MS * attempt));
       } else {
         console.error("❌ OpenAI error:", err.message);
         return null;
@@ -99,9 +99,9 @@ async function callOpenAI(prompt) {
   return null;
 }
 
-/* ------------------------------
-   Save updated file to repo
--------------------------------- */
+/* ---------------------------------
+   Save updated file
+---------------------------------- */
 function saveFixedFile(filePath, content) {
   const fullPath = path.join(__dirname, "..", filePath);
   fs.mkdirSync(path.dirname(fullPath), { recursive: true });
@@ -109,9 +109,9 @@ function saveFixedFile(filePath, content) {
   console.log("✔ Updated:", filePath);
 }
 
-/* ------------------------------
-   Main runner
--------------------------------- */
+/* ---------------------------------
+   MAIN
+---------------------------------- */
 async function main() {
   if (!fs.existsSync(sonarIssuesPath)) {
     console.error("❌ sonar-issues.json not found");
@@ -122,13 +122,17 @@ async function main() {
   const issues = sonarData.issues || [];
 
   console.log("Total Sonar Issues Found:", issues.length);
-  console.log(`Fixing first ${MAX_ISSUES} issues`);
+  console.log(`Fixing first ${MAX_FIXES} valid issues`);
 
-  for (const issue of issues.slice(0, MAX_ISSUES)) {
+  let fixedCount = 0;
+
+  for (const issue of issues) {
+    if (fixedCount >= MAX_FIXES) break;
+
     const filePath = issue.component.split(":").pop();
     const issueMsg = issue.message;
 
-    /* ------------------------------
+    /* -------------------------------
        SAFETY FILTERS (CRITICAL)
     -------------------------------- */
 
@@ -150,11 +154,12 @@ async function main() {
       continue;
     }
 
-    // Skip cosmetic rules
+    // Skip cosmetic / low-value rules
     if (
       issueMsg.toLowerCase().includes("replaceall") ||
       issueMsg.toLowerCase().includes("accessibility") ||
-      issueMsg.toLowerCase().includes("empty source")
+      issueMsg.toLowerCase().includes("empty source") ||
+      issueMsg.toLowerCase().includes("separator role")
     ) {
       console.log("⚠️ Skipping cosmetic issue:", issueMsg);
       continue;
@@ -189,7 +194,10 @@ Rules:
     if (!fixedCode) continue;
 
     saveFixedFile(filePath, fixedCode.replace(/```+/g, "").trim());
+    fixedCount++;
   }
+
+  console.log(`✅ Fixed ${fixedCount} issue(s)`);
 }
 
 main().catch(err => console.error("❌ AI Agent crashed:", err));
