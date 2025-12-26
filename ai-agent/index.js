@@ -14,7 +14,7 @@ const __dirname = path.dirname(__filename);
    ENV variables
 ---------------------------------- */
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // ✅ CHANGED
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = process.env.GITHUB_REPO;     // owner/repo
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "main";
@@ -24,7 +24,7 @@ const octokit = new Octokit({ auth: GITHUB_TOKEN });
 /* ---------------------------------
    Constants
 ---------------------------------- */
-const MAX_FIXES = 3;          // Fix only N valid issues per run
+const MAX_FILES = 3;          // Fix max N files per run
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 4000;
 
@@ -32,15 +32,12 @@ const BASE_DELAY_MS = 4000;
    Logs
 ---------------------------------- */
 console.log("🚀 AI Agent started...");
-console.log("OPENAI KEY AVAILABLE:", !!OPENAI_API_KEY);
 console.log("OPENAI MODEL:", OPENAI_MODEL);
-console.log("GITHUB TOKEN AVAILABLE:", !!GITHUB_TOKEN);
 
 /* ---------------------------------
    Sonar issues path
 ---------------------------------- */
 const sonarIssuesPath = path.join(__dirname, "sonar-issues.json");
-console.log("Reading sonar issues from:", sonarIssuesPath);
 
 /* ---------------------------------
    Fetch file from GitHub
@@ -53,10 +50,9 @@ async function fetchFileFromGitHub(filePath) {
       path: filePath,
       ref: GITHUB_BRANCH,
     });
-
     return Buffer.from(data.content, "base64").toString("utf8");
   } catch {
-    console.log("❌ Failed to fetch file:", filePath);
+    console.log("❌ Failed to fetch:", filePath);
     return null;
   }
 }
@@ -72,10 +68,10 @@ async function callOpenAI(prompt) {
         {
           model: OPENAI_MODEL,
           messages: [
-            { role: "system", content: "You are a code-fixing AI agent." },
+            { role: "system", content: "You are a senior code-fixing AI." },
             { role: "user", content: prompt }
           ],
-          temperature: 0.2,
+          temperature: 0.2
         },
         {
           headers: {
@@ -84,11 +80,10 @@ async function callOpenAI(prompt) {
           },
         }
       );
-
       return response.data.choices[0].message.content;
     } catch (err) {
       if (err.response?.status === 429) {
-        console.warn(`⚠️ Rate limited. Retrying in ${attempt * 4}s...`);
+        console.warn(`⚠️ Rate limited. Retrying in ${attempt * 4}s`);
         await new Promise(r => setTimeout(r, BASE_DELAY_MS * attempt));
       } else {
         console.error("❌ OpenAI error:", err.message);
@@ -96,8 +91,6 @@ async function callOpenAI(prompt) {
       }
     }
   }
-
-  console.warn("⚠️ OpenAI retries exhausted. Skipping issue.");
   return null;
 }
 
@@ -115,75 +108,68 @@ function saveFixedFile(filePath, content) {
    MAIN
 ---------------------------------- */
 async function main() {
-  if (!fs.existsSync(sonarIssuesPath)) {
-    console.error("❌ sonar-issues.json not found");
-    return;
-  }
-
   const sonarData = JSON.parse(fs.readFileSync(sonarIssuesPath, "utf8"));
   const issues = sonarData.issues || [];
 
-  console.log("Total Sonar Issues Found:", issues.length);
-  console.log(`Fixing first ${MAX_FIXES} valid issues`);
+  console.log("Total Sonar Issues:", issues.length);
 
-  let fixedCount = 0;
+  /* ---------------------------------
+     GROUP ISSUES BY FILE
+  ---------------------------------- */
+  const issuesByFile = {};
 
   for (const issue of issues) {
-    if (fixedCount >= MAX_FIXES) break;
-
     const filePath = issue.component.split(":").pop();
-    const issueMsg = issue.message.toLowerCase();
+    const msg = issue.message.toLowerCase();
 
-    /* -------------------------------
-       SAFETY FILTERS
-    -------------------------------- */
-
-    if (filePath.startsWith("ai-agent/")) {
-      console.log("⛔ Skipping AI agent file:", filePath);
-      continue;
-    }
-
-    if (filePath.endsWith(".spec.ts")) {
-      console.log("⚠️ Skipping test file:", filePath);
-      continue;
-    }
-
-    if (filePath.endsWith(".html") || filePath.endsWith(".css")) {
-      console.log("⚠️ Skipping non-code file:", filePath);
-      continue;
-    }
-
+    // Safety filters
     if (
-      issueMsg.includes("replaceall") ||
-      issueMsg.includes("accessibility") ||
-      issueMsg.includes("empty source") ||
-      issueMsg.includes("separator role")
+      filePath.startsWith("ai-agent/") ||
+      filePath.endsWith(".spec.ts") ||
+      filePath.endsWith(".html") ||
+      filePath.endsWith(".css") ||
+      msg.includes("replaceall") ||
+      msg.includes("accessibility") ||
+      msg.includes("empty source") ||
+      msg.includes("separator role") ||
+      msg.includes("top-level await")
     ) {
-      console.log("⚠️ Skipping cosmetic issue:", issue.message);
       continue;
     }
 
+    if (!issuesByFile[filePath]) {
+      issuesByFile[filePath] = [];
+    }
+
+    issuesByFile[filePath].push(issue.message);
+  }
+
+  const files = Object.keys(issuesByFile).slice(0, MAX_FILES);
+  console.log("Files to fix:", files);
+
+  for (const filePath of files) {
     console.log("\n=============================");
-    console.log("Processing:", filePath);
-    console.log("Issue:", issue.message);
+    console.log("Processing file:", filePath);
+    console.log("Issues:", issuesByFile[filePath]);
 
     const originalCode = await fetchFileFromGitHub(filePath);
     if (!originalCode) continue;
 
     const prompt = `
-Fix ONLY the SonarCloud issue below.
+Fix ALL SonarCloud issues listed below in ONE pass.
 
---- ISSUE ---
-${issue.message}
+--- ISSUES ---
+${issuesByFile[filePath].map((i, idx) => `${idx + 1}. ${i}`).join("\n")}
 
 --- FILE PATH ---
 ${filePath}
 
---- CODE ---
+--- ORIGINAL CODE ---
 ${originalCode}
 
 Rules:
-- Return FULL updated file only
+- Fix ALL issues
+- Return FULL updated file
 - No markdown
 - No explanations
 `;
@@ -192,13 +178,12 @@ Rules:
     if (!fixedCode) continue;
 
     saveFixedFile(filePath, fixedCode.replace(/```+/g, "").trim());
-    fixedCount++;
 
-    // Small delay to avoid burst limits
+    // Small delay to avoid burst
     await new Promise(r => setTimeout(r, 1000));
   }
 
-  console.log(`✅ Fixed ${fixedCount} issue(s)`);
+  console.log("✅ Multi-issue per file fix completed");
 }
 
-main().catch(err => console.error("❌ AI Agent crashed:", err));
+main().catch(err => console.error("❌ Agent failed:", err));
